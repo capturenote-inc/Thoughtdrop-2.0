@@ -120,17 +120,13 @@ export function TaskList() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold tracking-tight">Tasks</h2>
-        <div className="flex gap-2">
-          <span className="bg-surface-container px-3 py-1 rounded-full text-xs font-semibold text-on-surface-variant">
-            Filter
-          </span>
-          <button
-            onClick={() => setShowNewTask(!showNewTask)}
-            className="bg-tertiary-container px-3 py-1 rounded-full text-xs font-semibold text-on-tertiary-container hover:opacity-80 transition-opacity"
-          >
-            New Task
-          </button>
-        </div>
+        <button
+          onClick={() => setShowNewTask(!showNewTask)}
+          className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1"
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          New Task
+        </button>
       </div>
 
       {showNewTask && (
@@ -200,7 +196,7 @@ export function TaskList() {
                 className={cn(
                   "flex items-center justify-between p-4 rounded-lg shadow-sm",
                   group.label === "Overdue"
-                    ? "bg-white/50 dark:bg-surface-container-lowest/50 border-l-2 border-error/30"
+                    ? "bg-surface-container-lowest/50 border-l-2 border-error/30"
                     : "bg-surface-container-lowest",
                   group.label === "This week" && "opacity-80"
                 )}

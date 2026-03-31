@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-interface PageShortcut {
+interface StreamShortcut {
+  id: string;
   name: string;
   hashtag: string;
   noteCount: number;
@@ -9,8 +11,9 @@ interface PageShortcut {
   bgClass: string;
 }
 
-const mockPages: PageShortcut[] = [
+const mockStreams: StreamShortcut[] = [
   {
+    id: "webdev",
     name: "Web Development",
     hashtag: "#webdev",
     noteCount: 12,
@@ -19,6 +22,7 @@ const mockPages: PageShortcut[] = [
     bgClass: "bg-teal-50 dark:bg-teal-950/30",
   },
   {
+    id: "growth",
     name: "Personal Growth",
     hashtag: "#growth",
     noteCount: 8,
@@ -27,6 +31,7 @@ const mockPages: PageShortcut[] = [
     bgClass: "bg-amber-50 dark:bg-amber-950/30",
   },
   {
+    id: "design",
     name: "Design Projects",
     hashtag: "#design",
     noteCount: 15,
@@ -39,32 +44,33 @@ const mockPages: PageShortcut[] = [
 export function PageShortcuts() {
   return (
     <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {mockPages.map((page) => (
-        <div
-          key={page.hashtag}
-          className="bg-surface-container-lowest p-6 rounded-xl transition-all flex flex-col justify-between h-40 shadow-[0px_4px_20px_-10px_rgba(45,52,53,0.06)] border-l-4"
-          style={{ borderLeftColor: page.accentColor }}
+      {mockStreams.map((stream) => (
+        <Link
+          href={`/s/${stream.id}`}
+          key={stream.hashtag}
+          className="bg-surface-container-lowest p-6 rounded-xl transition-all flex flex-col justify-between h-40 shadow-[0px_4px_20px_-10px_rgba(45,52,53,0.06)] border-l-4 hover:shadow-md"
+          style={{ borderLeftColor: stream.accentColor }}
         >
           <div className="flex justify-between items-start">
             <div
-              className={cn("p-2 rounded-lg", page.bgClass)}
-              style={{ color: page.accentColor }}
+              className={cn("p-2 rounded-lg", stream.bgClass)}
+              style={{ color: stream.accentColor }}
             >
-              <span className="material-symbols-outlined">{page.icon}</span>
+              <span className="material-symbols-outlined">{stream.icon}</span>
             </div>
             <span className="text-[10px] font-bold tracking-widest uppercase text-on-surface-variant opacity-60">
-              {page.noteCount} NOTES
+              {stream.noteCount} NOTES
             </span>
           </div>
           <div>
             <h3 className="font-bold text-on-surface">
-              {page.name}
+              {stream.name}
             </h3>
             <p className="text-on-surface-variant text-sm mt-1">
-              {page.hashtag}
+              {stream.hashtag}
             </p>
           </div>
-        </div>
+        </Link>
       ))}
     </section>
   );

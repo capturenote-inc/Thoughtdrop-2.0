@@ -1,5 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
 
 interface InboxNote {
   id: string;
@@ -37,6 +41,8 @@ const mockNotes: InboxNote[] = [
 ];
 
 export function InboxPreview() {
+  const [editingNote, setEditingNote] = useState<InboxNote | null>(null);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -50,6 +56,7 @@ export function InboxPreview() {
         {mockNotes.map((note) => (
           <div
             key={note.id}
+            onClick={() => setEditingNote(note)}
             className={cn(
               "bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer border-l-4",
               note.accentColor ? "" : "border-transparent"
@@ -72,6 +79,13 @@ export function InboxPreview() {
           </div>
         ))}
       </div>
+
+      <ExpandedCaptureModal
+        open={editingNote !== null}
+        onClose={() => setEditingNote(null)}
+        initialTitle={editingNote?.title ?? ""}
+        initialContent={editingNote?.preview ?? ""}
+      />
     </div>
   );
 }

@@ -29,27 +29,27 @@ The product is **note capture first**, collaboration second. The "never lose a n
 ## Core Mechanic: Tag Routing
 
 - Notes are tagged with hashtags (e.g. `#webdevelopment`)
-- Each **Page** has a corresponding hashtag and a chosen colour
-- When a note is saved with a tag, it routes to the matching Page
-- A note with **multiple tags appears on all matching pages** — one record, multiple references
+- Each **Stream** has a corresponding hashtag and a chosen colour
+- When a note is saved with a tag, it routes to the matching Stream
+- A note with **multiple tags appears on all matching streams** — one record, multiple references
 - Untagged notes go to the **Inbox**
 - When a note is tagged (even after creation), it **leaves the Inbox**
 - Tag routing happens **on save**, not in real time
 
 ### Visual Tag Feedback (while typing)
-- If the hashtag matches an existing page → the hashtag text turns the page's colour inline + a coloured pill appears in the note footer
-- If the hashtag does not match any page → no colour change in text, but a **neutral pill appears in the footer** with a "Create page" action
-- If user creates the page from the pill → colour is assigned, routing activates on save
+- If the hashtag matches an existing stream → the hashtag text turns the stream's colour inline + a coloured pill appears in the note footer
+- If the hashtag does not match any stream → no colour change in text, but a **neutral pill appears in the footer** with a "Create stream" action
+- If user creates the stream from the pill → colour is assigned, routing activates on save
 
 ---
 
-## Pages
+## Streams
 
-- Every page has: a name, a hashtag, a colour, and an optional team
-- Pages are their own project spaces — think "one-on-one meetings", "web development", "hiring"
-- Pages support **bidirectional linking**: type `[[page name]]` to link; the linked page shows what links to it
-- Pages support **templates** (phase 2): "one-on-one meeting", "project kickoff", "weekly review"
-- Team members can be invited to pages; the admin sets per-member permissions
+- Every stream has: a name, a hashtag, a colour, and an optional team
+- Streams are their own project spaces — think "one-on-one meetings", "web development", "hiring"
+- Streams support **bidirectional linking**: type `[[stream name]]` to link; the linked stream shows what links to it
+- Streams support **templates** (phase 2): "one-on-one meeting", "project kickoff", "weekly review"
+- Team members can be invited to streams; the admin sets per-member permissions
 
 ---
 
@@ -67,14 +67,14 @@ The product is **note capture first**, collaboration second. The "never lose a n
 - ~75% screen size modal (not full screen)
 - Supports **slash commands**: headings, bullets, numbered lists, checkboxes
 - Supports image input and attachments
-- Still a capture tool, not a full page editor
+- Still a capture tool, not a full stream editor
 
-### Tier 3: Page Editor (BlockNote)
+### Tier 3: Stream Editor (BlockNote)
 - Full BlockNote implementation
 - Slash commands, drag-and-drop blocks, floating toolbar
 - Tables, images, attachments, all formatting
 - Bidirectional links
-- This is where notes live permanently on a page
+- This is where notes live permanently on a stream
 
 ---
 
@@ -94,7 +94,7 @@ The home screen when you open the app.
 
 **Layout (top to bottom):**
 1. Welcome back message
-2. Three large visual page shortcuts — most visited or most recent pages
+2. Three large visual stream shortcuts — most visited or most recent streams
 3. Split view:
    - **Left**: Inbox — unrouted notes, styled as notes (not a plain list)
    - **Right**: Tasks — 5 oldest overdue / 5 due today / 5 upcoming this week
@@ -111,7 +111,7 @@ The home screen when you open the app.
 - Every user gets a **personal workspace on signup** — free, private, always theirs
 - **Shared workspaces** are created by an admin who then invites others
 - When invited to a shared workspace, a user has two areas: their private space + the shared workspace
-- Admin controls **page-level permissions** within shared workspaces
+- Admin controls **stream-level permissions** within shared workspaces
 
 ### Freemium Model
 - **Solo / personal workspace**: free forever
@@ -126,7 +126,7 @@ The home screen when you open the app.
 
 ## Real-Time Collaboration
 
-- **Phase 1**: Presence indicators — you can see who else is on a page
+- **Phase 1**: Presence indicators — you can see who else is on a stream
 - **Phase 2**: Full live cursors + simultaneous editing (Yjs-based, BlockNote native support)
 
 ---
@@ -136,14 +136,14 @@ The home screen when you open the app.
 All AI powered by the Anthropic Claude API.
 
 ### Phase 1
-- **Tag suggestions**: as you write, AI suggests which page the note belongs to before you type a hashtag
-- **Summarisation**: summarise all notes on a page, or summarise inbox at end of week
+- **Tag suggestions**: as you write, AI suggests which stream the note belongs to before you type a hashtag
+- **Summarisation**: summarise all notes on a stream, or summarise inbox at end of week
 - **Task extraction**: AI reads a note and offers to create tasks from it
 
 ### Phase 2
 - Ask your notes: chat interface, semantic search across all notes (RAG pipeline)
-- Writing assistant: expand a quick note into a structured page write-up
-- Page templates via AI
+- Writing assistant: expand a quick note into a structured stream write-up
+- Stream templates via AI
 
 ---
 
@@ -173,7 +173,7 @@ All AI powered by the Anthropic Claude API.
 ```
 id
 workspace_id
-page_id (nullable — null = inbox)
+stream_id (nullable — null = inbox)
 user_id
 type (note | task)
 content (BlockNote JSON)
@@ -186,7 +186,7 @@ created_at
 updated_at
 ```
 
-### `pages` table
+### `streams` table
 ```
 id
 workspace_id
@@ -197,18 +197,18 @@ created_by
 created_at
 ```
 
-### `page_links` table (bidirectional linking)
+### `stream_links` table (bidirectional linking)
 ```
 id
-source_page_id
-target_page_id
+source_stream_id
+target_stream_id
 created_at
 ```
 
-### `note_pages` table (many-to-many: one note → multiple pages)
+### `note_streams` table (many-to-many: one note → multiple streams)
 ```
 note_id
-page_id
+stream_id
 ```
 
 ### `workspaces` table
@@ -254,4 +254,4 @@ joined_at
 
 - Pricing amount for the teams tier
 - Notification system for overdue tasks (in-app? email? push?)
-- Global search — searching across all notes and pages
+- Global search — searching across all notes and streams

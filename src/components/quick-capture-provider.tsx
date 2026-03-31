@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { QuickCaptureModal } from "@/features/editor/quick-capture-modal";
+import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
 
 interface QuickCaptureContextType {
   open: () => void;
@@ -15,15 +16,30 @@ export function useQuickCapture() {
 
 export function QuickCaptureProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [expandedOpen, setExpandedOpen] = useState(false);
+  const [expandedContent, setExpandedContent] = useState("");
+  const [expandedMode, setExpandedMode] = useState<"note" | "task">("note");
 
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
+  const handleExpand = useCallback((content: string, type: "note" | "task") => {
+    setIsOpen(false);
+    setExpandedContent(content);
+    setExpandedMode(type);
+    setExpandedOpen(true);
+  }, []);
+
+  const closeExpanded = useCallback(() => {
+    setExpandedOpen(false);
+    setExpandedContent("");
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // Cmd+Shift+D (Mac) or Ctrl+Shift+D (Windows)
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
+        e.stopPropagation();
         setIsOpen((prev) => !prev);
       }
     }
@@ -34,7 +50,13 @@ export function QuickCaptureProvider({ children }: { children: React.ReactNode }
   return (
     <QuickCaptureContext.Provider value={{ open }}>
       {children}
-      <QuickCaptureModal open={isOpen} onClose={close} />
+      <QuickCaptureModal open={isOpen} onClose={close} onExpand={handleExpand} />
+      <ExpandedCaptureModal
+        open={expandedOpen}
+        onClose={closeExpanded}
+        initialContent={expandedContent}
+        mode={expandedMode}
+      />
     </QuickCaptureContext.Provider>
   );
 }
