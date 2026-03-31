@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -18,6 +19,7 @@ const bottomItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
 
   return (
     <aside className="h-screen sticky top-0 left-0 w-[72px] bg-surface-container-low flex flex-col items-center py-6 z-50">
@@ -64,6 +66,15 @@ export function Sidebar() {
             <span className="material-symbols-outlined">{item.icon}</span>
           </Link>
         ))}
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="w-12 h-12 flex items-center justify-center text-on-surface-variant hover:bg-surface-variant rounded-xl transition-colors"
+          title="Toggle theme"
+        >
+          <span className="material-symbols-outlined">
+            {theme === "dark" ? "light_mode" : "dark_mode"}
+          </span>
+        </button>
         <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center text-xs font-bold text-on-surface-variant">
           B
         </div>
