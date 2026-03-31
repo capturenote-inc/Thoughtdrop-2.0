@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface Task {
@@ -15,7 +18,7 @@ interface TaskGroup {
   tasks: Task[];
 }
 
-const mockTaskGroups: TaskGroup[] = [
+const initialTaskGroups: TaskGroup[] = [
   {
     label: "Overdue",
     labelClass: "text-error",
@@ -68,6 +71,51 @@ const mockTaskGroups: TaskGroup[] = [
 ];
 
 export function TaskList() {
+  const [taskGroups, setTaskGroups] = useState<TaskGroup[]>(initialTaskGroups);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDueDate, setNewDueDate] = useState("");
+
+  function toggleTask(taskId: string) {
+    setTaskGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        tasks: group.tasks.map((task) =>
+          task.id === taskId ? { ...task, completed: !task.completed } : task
+        ),
+      }))
+    );
+  }
+
+  function addTask() {
+    if (!newTitle.trim()) return;
+
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: newTitle.trim(),
+      time: newDueDate
+        ? new Date(newDueDate).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })
+        : "No date",
+      accentColor: "#006b62",
+      completed: false,
+    };
+
+    setTaskGroups((prev) =>
+      prev.map((group) =>
+        group.label === "Today"
+          ? { ...group, tasks: [...group.tasks, newTask] }
+          : group
+      )
+    );
+
+    setNewTitle("");
+    setNewDueDate("");
+    setShowNewTask(false);
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -76,13 +124,62 @@ export function TaskList() {
           <span className="bg-surface-container px-3 py-1 rounded-full text-xs font-semibold text-on-surface-variant">
             Filter
           </span>
-          <span className="bg-tertiary-container px-3 py-1 rounded-full text-xs font-semibold text-on-tertiary-container">
+          <button
+            onClick={() => setShowNewTask(!showNewTask)}
+            className="bg-tertiary-container px-3 py-1 rounded-full text-xs font-semibold text-on-tertiary-container hover:opacity-80 transition-opacity"
+          >
             New Task
-          </span>
+          </button>
         </div>
       </div>
 
-      {mockTaskGroups.map((group) => (
+      {showNewTask && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            addTask();
+          }}
+          className="bg-surface-container-lowest p-4 rounded-xl shadow-sm space-y-3"
+        >
+          <input
+            type="text"
+            placeholder="Task title..."
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            autoFocus
+            className="w-full bg-transparent text-on-surface placeholder:text-on-surface-variant/50 font-medium outline-none text-sm"
+          />
+          <div className="flex items-center justify-between">
+            <input
+              type="date"
+              value={newDueDate}
+              onChange={(e) => setNewDueDate(e.target.value)}
+              className="bg-surface-container text-on-surface-variant text-xs px-3 py-1.5 rounded-lg outline-none"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewTask(false);
+                  setNewTitle("");
+                  setNewDueDate("");
+                }}
+                className="text-on-surface-variant text-xs px-3 py-1.5 hover:bg-surface-variant rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="bg-tertiary text-on-error text-xs font-semibold px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {taskGroups.map((group) => (
         <div key={group.label} className="space-y-4">
           <div className="flex items-center gap-3">
             <span
@@ -109,14 +206,15 @@ export function TaskList() {
                 )}
               >
                 <div className="flex items-center gap-4">
-                  <div
+                  <button
+                    onClick={() => toggleTask(task.id)}
                     className={cn(
-                      "w-5 h-5 rounded-full border-2 flex items-center justify-center",
+                      "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
                       task.completed
                         ? "border-tertiary text-tertiary"
                         : group.label === "Overdue"
-                          ? "border-outline-variant opacity-50"
-                          : "border-outline-variant"
+                          ? "border-outline-variant opacity-50 hover:border-tertiary hover:opacity-100"
+                          : "border-outline-variant hover:border-tertiary"
                     )}
                   >
                     {task.completed && (
@@ -127,10 +225,10 @@ export function TaskList() {
                         check
                       </span>
                     )}
-                  </div>
+                  </button>
                   <span
                     className={cn(
-                      "text-on-surface font-medium",
+                      "text-on-surface font-medium transition-all",
                       task.completed && "line-through opacity-50"
                     )}
                   >
