@@ -1,10 +1,15 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
+import { useQuickCapture } from "@/components/quick-capture-provider";
 
 interface HeaderProps {
   breadcrumb?: string;
 }
 
 export function Header({ breadcrumb = "Dashboard" }: HeaderProps) {
+  const { open } = useQuickCapture();
+
   return (
     <header className="w-full h-16 sticky top-0 z-40 bg-surface flex items-center justify-between px-8">
       <span className="text-on-surface-variant text-sm font-medium">
@@ -21,11 +26,14 @@ export function Header({ breadcrumb = "Dashboard" }: HeaderProps) {
           </div>
         </div>
 
-        <button className="text-on-surface-variant hover:text-primary transition-opacity">
+        <button className="text-on-surface-variant hover:text-primary transition-opacity cursor-default">
           <span className="material-symbols-outlined">notifications</span>
         </button>
 
-        <Button className="bg-primary text-on-primary px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90">
+        <Button
+          onClick={open}
+          className="bg-primary text-on-primary px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90"
+        >
           <span className="material-symbols-outlined text-sm">add</span>
           Add Note
         </Button>
