@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 interface InboxNote {
@@ -40,9 +41,9 @@ export function InboxPreview() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold tracking-tight">Inbox</h2>
-        <button className="text-primary text-sm font-medium hover:underline">
+        <Link href="/inbox" className="text-primary text-sm font-medium hover:underline">
           View all
-        </button>
+        </Link>
       </div>
 
       <div className="space-y-4">

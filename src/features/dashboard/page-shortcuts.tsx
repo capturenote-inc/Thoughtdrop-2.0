@@ -42,7 +42,8 @@ export function PageShortcuts() {
       {mockPages.map((page) => (
         <div
           key={page.hashtag}
-          className="group bg-surface-container-lowest p-6 rounded-xl hover:bg-surface-bright transition-all cursor-pointer flex flex-col justify-between h-40 shadow-[0px_4px_20px_-10px_rgba(45,52,53,0.06)]"
+          className="bg-surface-container-lowest p-6 rounded-xl transition-all flex flex-col justify-between h-40 shadow-[0px_4px_20px_-10px_rgba(45,52,53,0.06)] border-l-4"
+          style={{ borderLeftColor: page.accentColor }}
         >
           <div className="flex justify-between items-start">
             <div
@@ -56,7 +57,7 @@ export function PageShortcuts() {
             </span>
           </div>
           <div>
-            <h3 className="font-bold text-on-surface group-hover:text-primary transition-colors">
+            <h3 className="font-bold text-on-surface">
               {page.name}
             </h3>
             <p className="text-on-surface-variant text-sm mt-1">
