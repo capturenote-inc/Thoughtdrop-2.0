@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { STREAM_PRESET_COLORS, type KnownStream } from "@/lib/known-streams";
+import { STREAM_PRESET_COLORS, streamNameExists, type KnownStream } from "@/lib/known-streams";
 
 interface CreateStreamModalProps {
   open: boolean;
@@ -54,10 +54,12 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
     }
   }
 
+  const duplicateName = name.trim() ? streamNameExists(name) : false;
+
   function handleCreate() {
-    if (!name.trim() || !hashtag.trim()) return;
+    if (!name.trim() || !hashtag.trim() || duplicateName) return;
     const stream: KnownStream = {
-      id: hashtag,
+      id: crypto.randomUUID().slice(0, 8),
       name: name.trim(),
       hashtag: hashtag,
       color: color,
@@ -96,8 +98,16 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder="e.g. Web Development"
-              className="w-full bg-surface-container rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none focus:ring-2 focus:ring-tertiary/30"
+              className={cn(
+                "w-full bg-surface-container rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none focus:ring-2",
+                duplicateName ? "focus:ring-red-500/30 ring-2 ring-red-500/30" : "focus:ring-tertiary/30"
+              )}
             />
+            {duplicateName && (
+              <p className="text-xs text-red-500 font-medium mt-1">
+                A stream with this name already exists
+              </p>
+            )}
           </div>
 
           {/* Hashtag */}
@@ -162,7 +172,7 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
             </button>
             <button
               onClick={handleCreate}
-              disabled={!name.trim() || !hashtag.trim()}
+              disabled={!name.trim() || !hashtag.trim() || duplicateName}
               className="bg-inverse-surface text-inverse-on-surface text-sm font-semibold px-5 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-30"
             >
               Create Stream

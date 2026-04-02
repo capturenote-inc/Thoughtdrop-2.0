@@ -9,7 +9,7 @@ import { findStreamById } from "@/lib/known-streams";
 const routeLabels: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/inbox": "Inbox",
-  "/search": "Search",
+  "/tasks": "Tasks",
   "/workspaces": "Workspaces",
   "/settings": "Settings",
 };
@@ -20,7 +20,7 @@ function getBreadcrumb(pathname: string): string {
   const streamMatch = pathname.match(/^\/s\/(.+)$/);
   if (streamMatch) {
     const stream = findStreamById(streamMatch[1]);
-    return stream?.name ?? streamMatch[1];
+    return stream?.name ?? "Stream";
   }
   return pathname.split("/").pop() ?? "Dashboard";
 }

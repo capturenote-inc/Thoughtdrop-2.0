@@ -162,3 +162,38 @@
     color: var(--td-foreground);
   }
 }
+
+/* ── BlockNote z-index overrides ──
+   The sidebar (z-30, sticky) creates a stacking context.
+   Inline editor elements (drag handle, side menu) need position: relative
+   and high z-index to escape the main content layer.
+   Portaled elements (slash menu, toolbars) need the same. */
+/* Side menu + inline editor controls need position: relative + high z-index */
+.bn-side-menu,
+.bn-drag-handle,
+.bn-block-type-select,
+.bn-suggestion-menu,
+.bn-toolbar,
+.bn-formatting-toolbar,
+.bn-link-toolbar,
+.bn-image-toolbar,
+.bn-color-picker {
+  z-index: 9999 !important;
+  position: relative;
+}
+/* Dropdown menus (Floating UI) need z-index but must keep position: absolute */
+[data-radix-popper-content-wrapper],
+[data-tippy-root],
+.tippy-box,
+.tippy-content,
+div[class*="mantine-Popover"],
+div[class*="mantine-Menu"],
+div[class*="mantine-Portal"] {
+  z-index: 9999 !important;
+}
+
+/* Hide drag handle popover menu (Delete/Colors) — it fights Floating UI flip
+   and overlaps text. Drag-and-drop reordering still works. Revisit later. */
+.bn-drag-handle-menu {
+  display: none !important;
+}

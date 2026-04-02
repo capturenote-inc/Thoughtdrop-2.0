@@ -24,6 +24,21 @@ export const STREAM_PRESET_COLORS = [
   "#0891B2", // cyan
 ];
 
+export function registerStream(stream: KnownStream) {
+  if (!KNOWN_STREAMS.some((s) => s.id === stream.id)) {
+    KNOWN_STREAMS.push(stream);
+  }
+}
+
+export function removeStream(id: string) {
+  const idx = KNOWN_STREAMS.findIndex((s) => s.id === id);
+  if (idx !== -1) KNOWN_STREAMS.splice(idx, 1);
+}
+
+export function streamNameExists(name: string): boolean {
+  return KNOWN_STREAMS.some((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+}
+
 export function findStream(tag: string): KnownStream | undefined {
   return KNOWN_STREAMS.find((s) => s.hashtag === tag.toLowerCase());
 }
