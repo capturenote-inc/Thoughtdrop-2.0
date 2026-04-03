@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { findStream } from "@/lib/known-streams";
+import { createNote } from "@/lib/supabase/db";
 
 interface QuickCaptureModalProps {
   open: boolean;
   onClose: () => void;
   onExpand?: (content: string, type: "note" | "task") => void;
+  onUnknownTag?: (tag: string) => void;
 }
 
-export function QuickCaptureModal({ open, onClose, onExpand }: QuickCaptureModalProps) {
+export function QuickCaptureModal({ open, onClose, onExpand, onUnknownTag }: QuickCaptureModalProps) {
   const [content, setContent] = useState("");
   const [type, setType] = useState<"note" | "task">("note");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -39,8 +41,22 @@ export function QuickCaptureModal({ open, onClose, onExpand }: QuickCaptureModal
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
-  function handleSave() {
+  async function handleSave() {
     if (!content.trim()) return;
+
+    const tags = hashtags.map((t) => t.toLowerCase());
+    const unknownTags = tags.filter((t) => !findStream(t));
+
+    try {
+      await createNote({ content: content.trim(), hashtags: tags });
+    } catch (err) {
+      console.error("Failed to save note:", err);
+    }
+
+    if (unknownTags.length > 0 && onUnknownTag) {
+      onUnknownTag(unknownTags[0]);
+    }
+
     onClose();
   }
 
@@ -81,8 +97,7 @@ export function QuickCaptureModal({ open, onClose, onExpand }: QuickCaptureModal
           </button>
         </div>
 
-        {/* Content — hashtag text colored inline via CSS highlights would need ContentEditable;
-             for now the textarea is plain and the pills below provide the color feedback */}
+        {/* Content */}
         <div className="px-5 py-3">
           <textarea
             ref={textareaRef}
@@ -127,7 +142,7 @@ export function QuickCaptureModal({ open, onClose, onExpand }: QuickCaptureModal
                       title={`Create stream "${tag}"`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Stub: will create page in Supabase later
+                        onUnknownTag?.(tag);
                       }}
                     >
                       <span className="material-symbols-outlined text-[12px]">add</span>

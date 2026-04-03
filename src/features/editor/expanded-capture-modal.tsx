@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { findStream } from "@/lib/known-streams";
+import { createNote } from "@/lib/supabase/db";
 
 interface ExpandedCaptureModalProps {
   open: boolean;
@@ -9,6 +10,7 @@ interface ExpandedCaptureModalProps {
   initialTitle?: string;
   initialContent?: string;
   mode?: "note" | "task";
+  onUnknownTag?: (tag: string) => void;
 }
 
 export function ExpandedCaptureModal({
@@ -17,6 +19,7 @@ export function ExpandedCaptureModal({
   initialTitle = "",
   initialContent = "",
   mode = "note",
+  onUnknownTag,
 }: ExpandedCaptureModalProps) {
   const [title, setTitle] = useState(initialTitle);
   const [content, setContent] = useState(initialContent);
@@ -52,7 +55,6 @@ export function ExpandedCaptureModal({
         title !== lastSavedRef.current.title ||
         content !== lastSavedRef.current.content;
       if (hasChanges && (title.trim() || content.trim())) {
-        // Stub: will save to Supabase later
         lastSavedRef.current = { title, content };
         setShowSaved(true);
         setTimeout(() => setShowSaved(false), 2000);
@@ -77,6 +79,28 @@ export function ExpandedCaptureModal({
     setShowAiTooltip(true);
     setTimeout(() => setShowAiTooltip(false), 2000);
   }, []);
+
+  async function handleCapture() {
+    if (!title.trim() && !content.trim()) return;
+
+    const fullContent = title.trim()
+      ? `${title.trim()}\n${content.trim()}`
+      : content.trim();
+    const tags = hashtags.map((t) => t.toLowerCase());
+    const unknownTags = tags.filter((t) => !findStream(t));
+
+    try {
+      await createNote({ content: fullContent, hashtags: tags });
+    } catch (err) {
+      console.error("Failed to save note:", err);
+    }
+
+    if (unknownTags.length > 0 && onUnknownTag) {
+      onUnknownTag(unknownTags[0]);
+    }
+
+    onClose();
+  }
 
   if (!open) return null;
 
@@ -204,7 +228,7 @@ export function ExpandedCaptureModal({
                     title={`Create stream "${tag}"`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Stub: will create page in Supabase later
+                      onUnknownTag?.(tag);
                     }}
                   >
                     <span className="material-symbols-outlined text-[12px]">add</span>
@@ -217,7 +241,7 @@ export function ExpandedCaptureModal({
             </button>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleCapture}
             disabled={!title.trim() && !content.trim()}
             className="bg-tertiary text-on-error text-sm font-semibold px-5 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-30"
           >

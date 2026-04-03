@@ -3,6 +3,8 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { QuickCaptureModal } from "@/features/editor/quick-capture-modal";
 import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
+import { CreateStreamModal } from "@/components/layout/create-stream-modal";
+import { registerStream, type KnownStream } from "@/lib/known-streams";
 
 interface QuickCaptureContextType {
   open: () => void;
@@ -19,6 +21,8 @@ export function QuickCaptureProvider({ children }: { children: React.ReactNode }
   const [expandedOpen, setExpandedOpen] = useState(false);
   const [expandedContent, setExpandedContent] = useState("");
   const [expandedMode, setExpandedMode] = useState<"note" | "task">("note");
+  const [createStreamOpen, setCreateStreamOpen] = useState(false);
+  const [pendingTag, setPendingTag] = useState("");
 
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
@@ -33,6 +37,17 @@ export function QuickCaptureProvider({ children }: { children: React.ReactNode }
   const closeExpanded = useCallback(() => {
     setExpandedOpen(false);
     setExpandedContent("");
+  }, []);
+
+  const handleUnknownTag = useCallback((tag: string) => {
+    setPendingTag(tag);
+    setCreateStreamOpen(true);
+  }, []);
+
+  const handleCreateStream = useCallback((stream: KnownStream) => {
+    registerStream(stream);
+    setCreateStreamOpen(false);
+    setPendingTag("");
   }, []);
 
   useEffect(() => {
@@ -50,12 +65,24 @@ export function QuickCaptureProvider({ children }: { children: React.ReactNode }
   return (
     <QuickCaptureContext.Provider value={{ open }}>
       {children}
-      <QuickCaptureModal open={isOpen} onClose={close} onExpand={handleExpand} />
+      <QuickCaptureModal
+        open={isOpen}
+        onClose={close}
+        onExpand={handleExpand}
+        onUnknownTag={handleUnknownTag}
+      />
       <ExpandedCaptureModal
         open={expandedOpen}
         onClose={closeExpanded}
         initialContent={expandedContent}
         mode={expandedMode}
+        onUnknownTag={handleUnknownTag}
+      />
+      <CreateStreamModal
+        open={createStreamOpen}
+        onClose={() => { setCreateStreamOpen(false); setPendingTag(""); }}
+        onCreate={handleCreateStream}
+        initialName={pendingTag}
       />
     </QuickCaptureContext.Provider>
   );

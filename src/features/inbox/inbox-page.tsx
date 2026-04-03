@@ -1,111 +1,40 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { findStream } from "@/lib/known-streams";
 import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
+import {
+  fetchInboxNotes,
+  routeNoteToStream,
+  type DbNote,
+} from "@/lib/supabase/db";
 
-interface InboxNote {
-  id: string;
-  title: string;
-  content: string;
-  timeAgo: string;
+function timeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-const mockNotes: InboxNote[] = [
-  {
-    id: "1",
-    title: "Redesigning the typography scales",
-    content:
-      "Need to ensure the Inter font stacks correctly across all environments. Looking at 1.25x vs 1.333x ratios for the heading hierarchy. The current scale feels too compressed on mobile.",
-    timeAgo: "2h ago",
-  },
-  {
-    id: "2",
-    title: "Client meeting notes: Horizon Lab",
-    content:
-      '"We want the interface to feel like a quiet library, not a bustling stock exchange." — High priority feedback for the dashboard. Follow up with their design lead by Friday.',
-    timeAgo: "Oct 24",
-  },
-  {
-    id: "3",
-    title: "New thought captured from voice",
-    content:
-      "Asymmetric layouts are underutilized in SaaS. We should lean into editorial white space for the project view. Look at how Linear handles density vs breathing room.",
-    timeAgo: "Just now",
-  },
-  {
-    id: "4",
-    title: "Product Roadmap Q4",
-    content:
-      "AI Synthesis v2.1 — multi-device sync — dark mode polish — tag routing improvements. Need to prioritise based on user feedback from the beta group.",
-    timeAgo: "2 days ago",
-  },
-  {
-    id: "5",
-    title: 'The "No-Line" Rule',
-    content:
-      "Established that layout boundaries must be established solely through background color shifts. No visible borders, no dividers. Depth through tone, not stroke.",
-    timeAgo: "Last week",
-  },
-  {
-    id: "6",
-    title: "React 19 Server Components Research",
-    content:
-      "Testing the new 'use cache' directive. The performance gains for the dashboard rendering are significant (approx 40% reduction in TTI). Need to benchmark against current implementation.",
-    timeAgo: "3h ago",
-  },
-  {
-    id: "7",
-    title: "Habit Stacking Ideas",
-    content:
-      "Morning coffee followed immediately by 10 minutes of journaling. It's the only way to make it stick. Also try pairing a walk with podcast listening for the afternoon slump.",
-    timeAgo: "5h ago",
-  },
-  {
-    id: "8",
-    title: "Accessibility Audit Notes",
-    content:
-      "Need to ensure all Material Symbols have proper aria-label tags. Some of our custom components have contrast ratios below 4.5:1 on dark mode. Priority fix before launch.",
-    timeAgo: "Yesterday",
-  },
-  {
-    id: "9",
-    title: "Tailwind Config Architecture",
-    content:
-      "We should move the extended color palette to a separate theme.js file to keep the main config clean. This will help with the upcoming multi-tenant branding requirements.",
-    timeAgo: "Just now",
-  },
-  {
-    id: "10",
-    title: "Grocery List",
-    content:
-      "Oat milk, sourdough bread, avocados, sea salt, dark roast beans, sparkling water, cherry tomatoes, fresh basil, mozzarella, olive oil.",
-    timeAgo: "Yesterday",
-  },
-  {
-    id: "11",
-    title: "Weekly Review Template",
-    content:
-      "What went well? What didn't? What will I focus on next week? Keep it to 3 bullets per section max. Review every Sunday evening before the week starts.",
-    timeAgo: "4 days ago",
-  },
-  {
-    id: "12",
-    title: "Onboarding flow thoughts",
-    content:
-      "The first 30 seconds decide everything. Skip the tour, drop the user straight into a quick capture. Show value before asking for setup. Progressive disclosure for workspace config.",
-    timeAgo: "6h ago",
-  },
-];
-
 export function InboxPage() {
-  const [editingNote, setEditingNote] = useState<InboxNote | null>(null);
+  const [inboxNotes, setInboxNotes] = useState<DbNote[]>([]);
+  const [editingNote, setEditingNote] = useState<DbNote | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [routingId, setRoutingId] = useState<string | null>(null);
   const [routeTag, setRouteTag] = useState("");
   const [showAiTooltip, setShowAiTooltip] = useState(false);
 
-  const unreadCount = mockNotes.length;
+  useEffect(() => {
+    fetchInboxNotes().then(setInboxNotes);
+  }, []);
 
   const handleAiClick = useCallback(() => {
     setShowAiTooltip(true);
@@ -113,9 +42,19 @@ export function InboxPage() {
   }, []);
 
   const handleRouteSubmit = useCallback(
-    (noteId: string) => {
+    async (noteId: string) => {
       if (!routeTag.trim()) return;
-      // Stub: will route note to page in Supabase later
+      const stream = findStream(routeTag.trim().toLowerCase());
+      if (stream) {
+        try {
+          await routeNoteToStream(noteId, stream.id);
+          // Refresh inbox
+          const updated = await fetchInboxNotes();
+          setInboxNotes(updated);
+        } catch (err) {
+          console.error("Failed to route note:", err);
+        }
+      }
       setRoutingId(null);
       setRouteTag("");
     },
@@ -131,24 +70,23 @@ export function InboxPage() {
             <h1 className="text-2xl font-bold tracking-tight text-on-surface">
               Inbox
             </h1>
-            <span className="bg-tertiary text-on-error text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-              {unreadCount} unread
-            </span>
+            {inboxNotes.length > 0 && (
+              <span className="bg-tertiary text-on-error text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                {inboxNotes.length} unread
+              </span>
+            )}
           </div>
           <p className="text-on-surface-variant text-sm mt-1">
-            Notes without a page. Tag them to route them.
+            Notes without a stream. Tag them to route them.
           </p>
         </div>
 
-        {/* Summarise inbox button */}
         <div className="relative">
           <button
             onClick={handleAiClick}
             className="flex items-center gap-2 bg-inverse-surface text-inverse-on-surface px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
           >
-            <span className="material-symbols-outlined text-[18px]">
-              auto_awesome
-            </span>
+            <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
             Summarise Inbox
           </button>
           {showAiTooltip && (
@@ -159,119 +97,95 @@ export function InboxPage() {
         </div>
       </div>
 
-      {/* Fixed-height grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {mockNotes.map((note) => {
-          const isHovered = hoveredId === note.id;
-          const isRouting = routingId === note.id;
+      {inboxNotes.length === 0 ? (
+        <div className="text-center py-16">
+          <span className="material-symbols-outlined text-[48px] text-on-surface-variant/20">inbox</span>
+          <p className="text-on-surface-variant/50 text-sm mt-3">Inbox is empty — all notes are routed!</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {inboxNotes.map((note) => {
+            const isHovered = hoveredId === note.id;
+            const isRouting = routingId === note.id;
+            const firstLine = note.content.split("\n")[0].replace(/#\w+/g, "").trim() || "Untitled";
+            const rest = note.content.split("\n").slice(1).join("\n").trim() || note.content;
 
-          return (
-            <div
-              key={note.id}
-              className="bg-surface-container-lowest rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-transparent group relative h-[188px] overflow-hidden"
-              onMouseEnter={() => setHoveredId(note.id)}
-              onMouseLeave={() => {
-                setHoveredId(null);
-                if (routingId === note.id) {
-                  setRoutingId(null);
-                  setRouteTag("");
-                }
-              }}
-              onClick={() => setEditingNote(note)}
-            >
-              {/* Timestamp pill */}
-              <div className="px-5 pt-4 pb-1">
-                <span className="text-[10px] font-semibold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-md">
-                  {note.timeAgo}
-                </span>
-              </div>
-
-              {/* Content */}
-              <div className="px-5 py-3">
-                <h3 className="font-bold text-on-surface text-sm mb-1.5">
-                  {note.title}
-                </h3>
-                <p className="text-on-surface-variant text-xs leading-relaxed line-clamp-3">
-                  {note.content}
-                </p>
-              </div>
-
-              {/* Bottom fade for overflow */}
-              <div className="absolute bottom-0 inset-x-0 h-12 bg-gradient-to-t from-surface-container-lowest to-transparent pointer-events-none" />
-
-              {/* Hover overlay actions */}
-              {isHovered && !isRouting && (
-                <div
-                  className="absolute bottom-2.5 right-2.5 z-10"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRoutingId(note.id);
-                    }}
-                    className="bg-inverse-surface/90 text-inverse-on-surface text-[10px] font-medium px-2 py-1 rounded-md hover:bg-inverse-surface transition-colors flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-[12px]">
-                      sell
-                    </span>
-                    Route
-                  </button>
+            return (
+              <div
+                key={note.id}
+                className="bg-surface-container-lowest rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-transparent group relative h-[188px] overflow-hidden"
+                onMouseEnter={() => setHoveredId(note.id)}
+                onMouseLeave={() => {
+                  setHoveredId(null);
+                  if (routingId === note.id) {
+                    setRoutingId(null);
+                    setRouteTag("");
+                  }
+                }}
+                onClick={() => setEditingNote(note)}
+              >
+                <div className="px-5 pt-4 pb-1">
+                  <span className="text-[10px] font-semibold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-md">
+                    {timeAgo(new Date(note.created_at))}
+                  </span>
                 </div>
-              )}
 
-              {/* Inline routing input */}
-              {isRouting && (
-                <div
-                  className="absolute bottom-2.5 left-4 right-4 z-10"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleRouteSubmit(note.id);
-                    }}
-                    className="flex items-center gap-1.5"
-                  >
-                    <div className="flex-1 flex items-center gap-1.5 bg-surface-container rounded-md px-2.5 py-1">
-                      <span className="text-on-surface-variant text-xs font-bold">
-                        #
-                      </span>
-                      <input
-                        type="text"
-                        value={routeTag}
-                        onChange={(e) => setRouteTag(e.target.value)}
-                        placeholder="tag name..."
-                        autoFocus
-                        className="flex-1 bg-transparent text-on-surface text-xs outline-none placeholder:text-on-surface-variant/40"
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            setRoutingId(null);
-                            setRouteTag("");
-                          }
-                        }}
-                      />
-                    </div>
+                <div className="px-5 py-3">
+                  <h3 className="font-bold text-on-surface text-sm mb-1.5">{firstLine}</h3>
+                  <p className="text-on-surface-variant text-xs leading-relaxed line-clamp-3">{rest}</p>
+                </div>
+
+                <div className="absolute bottom-0 inset-x-0 h-12 bg-gradient-to-t from-surface-container-lowest to-transparent pointer-events-none" />
+
+                {isHovered && !isRouting && (
+                  <div className="absolute bottom-2.5 right-2.5 z-10" onClick={(e) => e.stopPropagation()}>
                     <button
-                      type="submit"
-                      disabled={!routeTag.trim()}
-                      className="bg-tertiary text-on-error text-[10px] font-semibold px-2.5 py-1 rounded-md hover:opacity-90 transition-opacity disabled:opacity-30"
+                      onClick={(e) => { e.stopPropagation(); setRoutingId(note.id); }}
+                      className="bg-inverse-surface/90 text-inverse-on-surface text-[10px] font-medium px-2 py-1 rounded-md hover:bg-inverse-surface transition-colors flex items-center gap-1"
                     >
+                      <span className="material-symbols-outlined text-[12px]">sell</span>
                       Route
                     </button>
-                  </form>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                  </div>
+                )}
 
-      {/* Expanded capture modal for editing */}
+                {isRouting && (
+                  <div className="absolute bottom-2.5 left-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); handleRouteSubmit(note.id); }}
+                      className="flex items-center gap-1.5"
+                    >
+                      <div className="flex-1 flex items-center gap-1.5 bg-surface-container rounded-md px-2.5 py-1">
+                        <span className="text-on-surface-variant text-xs font-bold">#</span>
+                        <input
+                          type="text"
+                          value={routeTag}
+                          onChange={(e) => setRouteTag(e.target.value)}
+                          placeholder="tag name..."
+                          autoFocus
+                          className="flex-1 bg-transparent text-on-surface text-xs outline-none placeholder:text-on-surface-variant/40"
+                          onKeyDown={(e) => { if (e.key === "Escape") { setRoutingId(null); setRouteTag(""); } }}
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={!routeTag.trim()}
+                        className="bg-tertiary text-on-error text-[10px] font-semibold px-2.5 py-1 rounded-md hover:opacity-90 transition-opacity disabled:opacity-30"
+                      >
+                        Route
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <ExpandedCaptureModal
         open={editingNote !== null}
-        onClose={() => setEditingNote(null)}
-        initialTitle={editingNote?.title ?? ""}
+        onClose={() => { setEditingNote(null); fetchInboxNotes().then(setInboxNotes); }}
         initialContent={editingNote?.content ?? ""}
       />
     </div>

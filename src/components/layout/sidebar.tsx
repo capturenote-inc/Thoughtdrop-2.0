@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { KNOWN_STREAMS, STREAM_PRESET_COLORS, registerStream, removeStream, type KnownStream } from "@/lib/known-streams";
-import { CreateStreamModal } from "@/components/layout/create-stream-modal";
+import { registerStream, removeStream, type KnownStream } from "@/lib/known-streams";
+import { CreateStreamModal, type CreateStreamResult } from "@/components/layout/create-stream-modal";
 import { SettingsModal } from "@/components/layout/settings-modal";
+import {
+  ensureDefaultWorkspace,
+  fetchStreams,
+  createStream as dbCreateStream,
+  deleteStream as dbDeleteStream,
+} from "@/lib/supabase/db";
 
 const navItems = [
   { icon: "dashboard", label: "Dashboard", href: "/dashboard" },
@@ -14,16 +20,43 @@ const navItems = [
   { icon: "checklist", label: "Tasks", href: "/tasks" },
 ];
 
+interface SidebarStream {
+  id: string;
+  name: string;
+  hashtag: string;
+  color: string;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [expanded, setExpanded] = useState(true);
-  const [streams, setStreams] = useState<KnownStream[]>(KNOWN_STREAMS);
+  const [streams, setStreams] = useState<SidebarStream[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; stream: KnownStream } | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<KnownStream | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; stream: SidebarStream } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<SidebarStream | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const contextRef = useRef<HTMLDivElement>(null);
+
+  // Fetch streams from Supabase on mount
+  useEffect(() => {
+    async function load() {
+      await ensureDefaultWorkspace();
+      const dbStreams = await fetchStreams();
+      const mapped = dbStreams.map((s) => ({
+        id: s.id,
+        name: s.name,
+        hashtag: s.hashtag,
+        color: s.colour,
+      }));
+      setStreams(mapped);
+      // Sync to in-memory registry for tag routing lookups
+      for (const s of mapped) {
+        registerStream(s);
+      }
+    }
+    load();
+  }, []);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -37,19 +70,39 @@ export function Sidebar() {
     return () => window.removeEventListener("mousedown", handleClick);
   }, [contextMenu]);
 
-  function handleCreateStream(stream: KnownStream) {
-    registerStream(stream);
-    setStreams((prev) => [...prev, stream]);
-    setCreateOpen(false);
-    router.push(`/s/${stream.id}`);
+  async function handleCreateStream(result: CreateStreamResult) {
+    try {
+      const dbStream = await dbCreateStream({
+        name: result.name,
+        hashtag: result.hashtag,
+        colour: result.color,
+      });
+      const mapped: SidebarStream = {
+        id: dbStream.id,
+        name: dbStream.name,
+        hashtag: dbStream.hashtag,
+        color: dbStream.colour,
+      };
+      registerStream(mapped);
+      setStreams((prev) => [...prev, mapped]);
+      setCreateOpen(false);
+      router.push(`/s/${dbStream.id}`);
+    } catch (err) {
+      console.error("Failed to create stream:", err);
+    }
   }
 
-  function handleDeleteStream(stream: KnownStream) {
-    removeStream(stream.id);
-    setStreams((prev) => prev.filter((s) => s.id !== stream.id));
-    setDeleteConfirm(null);
-    if (pathname === `/s/${stream.id}`) {
-      router.push("/dashboard");
+  async function handleDeleteStream(stream: SidebarStream) {
+    try {
+      await dbDeleteStream(stream.id);
+      removeStream(stream.id);
+      setStreams((prev) => prev.filter((s) => s.id !== stream.id));
+      setDeleteConfirm(null);
+      if (pathname === `/s/${stream.id}`) {
+        router.push("/dashboard");
+      }
+    } catch (err) {
+      console.error("Failed to delete stream:", err);
     }
   }
 
@@ -129,7 +182,6 @@ export function Sidebar() {
 
         {/* Streams section */}
         <div className={cn("mt-6 flex flex-col", expanded ? "px-3" : "items-center")}>
-          {/* Section header */}
           <div
             className={cn(
               "flex items-center mb-2",
@@ -150,7 +202,6 @@ export function Sidebar() {
             </button>
           </div>
 
-          {/* Stream list */}
           <div className={cn("flex flex-col gap-0.5", !expanded && "items-center")}>
             {streams.map((stream) => {
               const isActive = pathname === `/s/${stream.id}`;
@@ -198,17 +249,14 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Spacer */}
         <div className="flex-grow" />
 
-        {/* Bottom section */}
         <div
           className={cn(
             "flex flex-col gap-1",
             expanded ? "px-3" : "items-center"
           )}
         >
-          {/* Settings */}
           <button
             onClick={() => setSettingsOpen(true)}
             className={cn(
@@ -236,7 +284,6 @@ export function Sidebar() {
         onClose={() => setSettingsOpen(false)}
       />
 
-      {/* Context menu */}
       {contextMenu && (
         <div
           ref={contextRef}
@@ -256,7 +303,6 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-8">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} />

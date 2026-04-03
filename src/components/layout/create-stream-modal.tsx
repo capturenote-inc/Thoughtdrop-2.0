@@ -2,12 +2,23 @@
 
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { STREAM_PRESET_COLORS, streamNameExists, type KnownStream } from "@/lib/known-streams";
+import { STREAM_PRESET_COLORS } from "@/lib/known-streams";
+import { checkHashtagExists } from "@/lib/supabase/db";
+
+export interface CreateStreamResult {
+  id: string;
+  name: string;
+  hashtag: string;
+  color: string;
+}
 
 interface CreateStreamModalProps {
   open: boolean;
   onClose: () => void;
-  onCreate: (stream: KnownStream) => void;
+  onCreate: (result: CreateStreamResult) => void;
+  initialName?: string;
+  /** "stream" or "subpage" — changes the modal title */
+  mode?: "stream" | "subpage";
 }
 
 function nameToHashtag(name: string): string {
@@ -18,22 +29,25 @@ function nameToHashtag(name: string): string {
     .trim();
 }
 
-export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModalProps) {
+export function CreateStreamModal({ open, onClose, onCreate, initialName = "", mode = "stream" }: CreateStreamModalProps) {
   const [name, setName] = useState("");
   const [hashtag, setHashtag] = useState("");
   const [hashtagEdited, setHashtagEdited] = useState(false);
   const [color, setColor] = useState(STREAM_PRESET_COLORS[0]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const label = mode === "subpage" ? "Sub-page" : "Stream";
+
   useEffect(() => {
     if (open) {
-      setName("");
-      setHashtag("");
+      const prefill = initialName ? initialName.charAt(0).toUpperCase() + initialName.slice(1) : "";
+      setName(prefill);
+      setHashtag(nameToHashtag(prefill));
       setHashtagEdited(false);
       setColor(STREAM_PRESET_COLORS[0]);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [open]);
+  }, [open, initialName]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,17 +68,26 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
     }
   }
 
-  const duplicateName = name.trim() ? streamNameExists(name) : false;
+  const [duplicateHashtag, setDuplicateHashtag] = useState(false);
+
+  // Check hashtag uniqueness against Supabase (debounced)
+  useEffect(() => {
+    if (!hashtag.trim()) { setDuplicateHashtag(false); return; }
+    const timer = setTimeout(async () => {
+      const exists = await checkHashtagExists(hashtag);
+      setDuplicateHashtag(exists);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [hashtag]);
 
   function handleCreate() {
-    if (!name.trim() || !hashtag.trim() || duplicateName) return;
-    const stream: KnownStream = {
+    if (!name.trim() || !hashtag.trim() || duplicateHashtag) return;
+    onCreate({
       id: crypto.randomUUID().slice(0, 8),
       name: name.trim(),
       hashtag: hashtag,
       color: color,
-    };
-    onCreate(stream);
+    });
   }
 
   if (!open) return null;
@@ -76,7 +99,7 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
       <div className="relative bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h2 className="text-lg font-bold text-on-surface">Create Stream</h2>
+          <h2 className="text-lg font-bold text-on-surface">Create {label}</h2>
           <button
             onClick={onClose}
             className="text-on-surface-variant hover:text-on-surface p-1.5 rounded-lg hover:bg-surface-variant transition-colors"
@@ -90,24 +113,19 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
           {/* Name */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-on-surface-variant">
-              Stream name
+              {label} name
             </label>
             <input
               ref={inputRef}
               type="text"
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="e.g. Web Development"
+              placeholder={mode === "subpage" ? "e.g. Rico" : "e.g. Web Development"}
               className={cn(
                 "w-full bg-surface-container rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none focus:ring-2",
-                duplicateName ? "focus:ring-red-500/30 ring-2 ring-red-500/30" : "focus:ring-tertiary/30"
+                "focus:ring-tertiary/30"
               )}
             />
-            {duplicateName && (
-              <p className="text-xs text-red-500 font-medium mt-1">
-                A stream with this name already exists
-              </p>
-            )}
           </div>
 
           {/* Hashtag */}
@@ -115,7 +133,10 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
             <label className="text-xs font-semibold text-on-surface-variant">
               Hashtag
             </label>
-            <div className="flex items-center bg-surface-container rounded-lg px-4 py-2.5">
+            <div className={cn(
+              "flex items-center bg-surface-container rounded-lg px-4 py-2.5",
+              duplicateHashtag && "ring-2 ring-red-500/30"
+            )}>
               <span className="text-on-surface-variant text-sm font-bold mr-1">#</span>
               <input
                 type="text"
@@ -124,10 +145,15 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
                   setHashtag(nameToHashtag(e.target.value));
                   setHashtagEdited(true);
                 }}
-                placeholder="webdevelopment"
+                placeholder={mode === "subpage" ? "rico" : "webdevelopment"}
                 className="flex-1 bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none"
               />
             </div>
+            {duplicateHashtag && (
+              <p className="text-xs text-red-500 font-medium mt-1">
+                This hashtag is already in use
+              </p>
+            )}
           </div>
 
           {/* Colour picker */}
@@ -172,10 +198,10 @@ export function CreateStreamModal({ open, onClose, onCreate }: CreateStreamModal
             </button>
             <button
               onClick={handleCreate}
-              disabled={!name.trim() || !hashtag.trim() || duplicateName}
+              disabled={!name.trim() || !hashtag.trim() || duplicateHashtag}
               className="bg-inverse-surface text-inverse-on-surface text-sm font-semibold px-5 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-30"
             >
-              Create Stream
+              Create {label}
             </button>
           </div>
         </div>

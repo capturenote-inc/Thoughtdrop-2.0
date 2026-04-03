@@ -4,58 +4,32 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { KNOWN_STREAMS } from "@/lib/known-streams";
+import {
+  fetchTasks,
+  createTask as dbCreateTask,
+  toggleTaskDone,
+  type DbTask,
+} from "@/lib/supabase/db";
 
 /* ── Types ── */
 
-interface GlobalTask {
-  id: string;
-  title: string;
-  dueDate: string | null;
-  dueDateObj: Date | null;
-  priority: "urgent" | "high" | "normal" | "low";
-  status: "todo" | "in_progress" | "done";
-  streamId: string | null;
-  streamName: string;
-}
+type Priority = "low" | "medium" | "high";
 
-const priorityColors: Record<GlobalTask["priority"], string> = {
-  urgent: "#DC2626",
-  high: "#F59E0B",
-  normal: "#0D9488",
+const priorityColors: Record<Priority, string> = {
+  high: "#DC2626",
+  medium: "#F59E0B",
   low: "#6B7280",
 };
 
-const priorityLabels: Record<GlobalTask["priority"], string> = {
-  urgent: "Urgent",
+const priorityLabels: Record<Priority, string> = {
   high: "High",
-  normal: "Normal",
+  medium: "Medium",
   low: "Low",
 };
 
-/* ── Mock data ── */
-
-const today = new Date();
-const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-const twoDaysAgo = new Date(today); twoDaysAgo.setDate(today.getDate() - 2);
-const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-const inThreeDays = new Date(today); inThreeDays.setDate(today.getDate() + 3);
-const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 10);
-
-function fmtDate(d: Date): string {
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+function fmtDate(d: string): string {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-
-const initialTasks: GlobalTask[] = [
-  { id: "gt1", title: "Refactor auth hooks", dueDate: fmtDate(yesterday), dueDateObj: yesterday, priority: "high", status: "in_progress", streamId: "webdev", streamName: "Web Development" },
-  { id: "gt2", title: "Update README docs", dueDate: fmtDate(twoDaysAgo), dueDateObj: twoDaysAgo, priority: "normal", status: "todo", streamId: "webdev", streamName: "Web Development" },
-  { id: "gt3", title: "CI/CD Pipeline Fix", dueDate: null, dueDateObj: null, priority: "urgent", status: "todo", streamId: "webdev", streamName: "Web Development" },
-  { id: "gt4", title: "Mood board for landing page", dueDate: fmtDate(today), dueDateObj: today, priority: "normal", status: "todo", streamId: "design", streamName: "Design Projects" },
-  { id: "gt5", title: "Review component library", dueDate: fmtDate(today), dueDateObj: today, priority: "high", status: "in_progress", streamId: "design", streamName: "Design Projects" },
-  { id: "gt6", title: "Write blog post outline", dueDate: fmtDate(tomorrow), dueDateObj: tomorrow, priority: "normal", status: "todo", streamId: "growth", streamName: "Personal Growth" },
-  { id: "gt7", title: "Schedule team retro", dueDate: fmtDate(inThreeDays), dueDateObj: inThreeDays, priority: "low", status: "todo", streamId: null, streamName: "Inbox" },
-  { id: "gt8", title: "Plan Q2 goals", dueDate: fmtDate(nextWeek), dueDateObj: nextWeek, priority: "normal", status: "todo", streamId: "growth", streamName: "Personal Growth" },
-  { id: "gt9", title: "Initial Project Setup", dueDate: fmtDate(twoDaysAgo), dueDateObj: twoDaysAgo, priority: "normal", status: "done", streamId: "webdev", streamName: "Web Development" },
-];
 
 /* ── Date grouping ── */
 
@@ -63,24 +37,24 @@ interface DateGroup {
   key: string;
   label: string;
   color?: string;
-  tasks: GlobalTask[];
+  tasks: DbTask[];
 }
 
-function groupByDueDate(tasks: GlobalTask[]): DateGroup[] {
+function groupByDueDate(tasks: DbTask[]): DateGroup[] {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(todayStart.getDate() + 1);
   const weekEnd = new Date(todayStart); weekEnd.setDate(todayStart.getDate() + 7);
 
-  const overdue: GlobalTask[] = [];
-  const todayTasks: GlobalTask[] = [];
-  const thisWeek: GlobalTask[] = [];
-  const later: GlobalTask[] = [];
-  const noDate: GlobalTask[] = [];
+  const overdue: DbTask[] = [];
+  const todayTasks: DbTask[] = [];
+  const thisWeek: DbTask[] = [];
+  const later: DbTask[] = [];
+  const noDate: DbTask[] = [];
 
   for (const t of tasks) {
-    if (!t.dueDateObj) { noDate.push(t); continue; }
-    const d = new Date(t.dueDateObj.getFullYear(), t.dueDateObj.getMonth(), t.dueDateObj.getDate());
+    if (!t.due_date) { noDate.push(t); continue; }
+    const d = new Date(t.due_date);
     if (d < todayStart) overdue.push(t);
     else if (d < tomorrowStart) todayTasks.push(t);
     else if (d < weekEnd) thisWeek.push(t);
@@ -96,37 +70,36 @@ function groupByDueDate(tasks: GlobalTask[]): DateGroup[] {
   return groups;
 }
 
+function getStreamName(streamId: string | null): string {
+  if (!streamId) return "Inbox";
+  return KNOWN_STREAMS.find((s) => s.id === streamId)?.name ?? "Stream";
+}
+
 /* ── New task modal ── */
 
 function NewTaskModal({ open, onClose, onCreate }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (task: GlobalTask) => void;
+  onCreate: (input: { title: string; dueDate: string | null; priority: Priority; streamId: string | null }) => void;
 }) {
   const [name, setName] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState<GlobalTask["priority"]>("normal");
+  const [priority, setPriority] = useState<Priority>("medium");
   const [streamId, setStreamId] = useState<string>("");
 
   if (!open) return null;
 
   function handleCreate() {
     if (!name.trim()) return;
-    const dueDateObj = dueDate ? new Date(dueDate) : null;
-    const stream = KNOWN_STREAMS.find((s) => s.id === streamId);
     onCreate({
-      id: crypto.randomUUID(),
       title: name.trim(),
-      dueDate: dueDateObj ? fmtDate(dueDateObj) : null,
-      dueDateObj,
+      dueDate: dueDate || null,
       priority,
-      status: "todo",
       streamId: streamId || null,
-      streamName: stream?.name ?? "Inbox",
     });
     setName("");
     setDueDate("");
-    setPriority("normal");
+    setPriority("medium");
     setStreamId("");
     onClose();
   }
@@ -142,7 +115,6 @@ function NewTaskModal({ open, onClose, onCreate }: {
           </button>
         </div>
         <div className="px-6 pb-6 space-y-4">
-          {/* Name */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-on-surface-variant">Task name</label>
             <input
@@ -156,7 +128,6 @@ function NewTaskModal({ open, onClose, onCreate }: {
             />
           </div>
 
-          {/* Due date */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-on-surface-variant">Due date</label>
             <input
@@ -167,11 +138,10 @@ function NewTaskModal({ open, onClose, onCreate }: {
             />
           </div>
 
-          {/* Priority */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-on-surface-variant">Priority</label>
             <div className="flex gap-2">
-              {(["urgent", "high", "normal", "low"] as const).map((p) => (
+              {(["high", "medium", "low"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPriority(p)}
@@ -190,7 +160,6 @@ function NewTaskModal({ open, onClose, onCreate }: {
             </div>
           </div>
 
-          {/* Stream selector */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-on-surface-variant">Stream</label>
             <select
@@ -205,7 +174,6 @@ function NewTaskModal({ open, onClose, onCreate }: {
             </select>
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={onClose} className="text-on-surface-variant text-sm px-4 py-2 hover:bg-surface-variant rounded-lg transition-colors">
               Cancel
@@ -224,135 +192,50 @@ function NewTaskModal({ open, onClose, onCreate }: {
   );
 }
 
-/* ── Task detail modal ── */
-
-function TaskDetailModal({ task, open, onClose, onUpdate, onNavigate }: {
-  task: GlobalTask | null;
-  open: boolean;
-  onClose: () => void;
-  onUpdate: (task: GlobalTask) => void;
-  onNavigate: (path: string) => void;
-}) {
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [priority, setPriority] = useState<GlobalTask["priority"]>(task?.priority ?? "normal");
-
-  // Sync local state when a different task is opened
-  useEffect(() => {
-    if (task) {
-      setTitle(task.title);
-      setPriority(task.priority);
-    }
-  }, [task]);
-
-  if (!open || !task) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h2 className="text-lg font-bold text-on-surface">Task Details</h2>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface p-1.5 rounded-lg hover:bg-surface-variant transition-colors">
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
-        <div className="px-6 pb-6 space-y-4">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full bg-surface-container rounded-lg px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-tertiary/30 font-semibold"
-          />
-
-          <div className="flex items-center gap-4 text-sm text-on-surface-variant">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[16px]">calendar_today</span>
-              {task.dueDate ?? "No date"}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: priorityColors[task.priority] }} />
-              {priorityLabels[task.priority]}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-on-surface-variant">
-            <span className="material-symbols-outlined text-[16px]">folder</span>
-            {task.streamName}
-            {task.streamId && (
-              <button
-                onClick={() => { onClose(); onNavigate(`/s/${task.streamId}`); }}
-                className="text-tertiary text-xs font-medium hover:underline ml-auto flex items-center gap-1"
-              >
-                Go to location
-                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-              </button>
-            )}
-          </div>
-
-          {/* Priority selector */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-on-surface-variant">Priority</label>
-            <div className="flex gap-2">
-              {(["urgent", "high", "normal", "low"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPriority(p)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
-                    priority === p
-                      ? "border-current bg-surface-container-highest"
-                      : "border-transparent hover:bg-surface-variant"
-                  )}
-                  style={priority === p ? { color: priorityColors[p] } : undefined}
-                >
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: priorityColors[p] }} />
-                  {priorityLabels[p]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={onClose} className="text-on-surface-variant text-sm px-4 py-2 hover:bg-surface-variant rounded-lg transition-colors">
-              Cancel
-            </button>
-            <button
-              onClick={() => { onUpdate({ ...task, title, priority }); onClose(); }}
-              className="bg-inverse-surface text-inverse-on-surface text-sm font-semibold px-5 py-2 rounded-lg hover:opacity-90 transition-opacity"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Main component ── */
 
 export function TasksPage() {
   const router = useRouter();
-  const [tasks, setTasks] = useState<GlobalTask[]>(initialTasks);
+  const [tasks, setTasks] = useState<DbTask[]>([]);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
-  const [detailTask, setDetailTask] = useState<GlobalTask | null>(null);
   const [showDone, setShowDone] = useState(false);
 
-  const activeTasks = tasks.filter((t) => t.status !== "done");
-  const doneTasks = tasks.filter((t) => t.status === "done");
+  useEffect(() => {
+    fetchTasks().then(setTasks);
+  }, []);
+
+  const activeTasks = tasks.filter((t) => !t.done);
+  const doneTasks = tasks.filter((t) => t.done);
   const groups = groupByDueDate(activeTasks);
 
-  function toggleTask(taskId: string) {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== taskId) return t;
-        return { ...t, status: t.status === "done" ? "todo" as const : "done" as const };
-      })
-    );
+  async function handleToggle(taskId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const newDone = !task.done;
+    // Optimistic update
+    setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, done: newDone } : t));
+    try {
+      await toggleTaskDone(taskId, newDone);
+    } catch (err) {
+      console.error("Failed to toggle task:", err);
+      // Revert
+      setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, done: !newDone } : t));
+    }
   }
 
-  function updateTask(updated: GlobalTask) {
-    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+  async function handleCreate(input: { title: string; dueDate: string | null; priority: Priority; streamId: string | null }) {
+    try {
+      const task = await dbCreateTask({
+        title: input.title,
+        dueDate: input.dueDate,
+        priority: input.priority,
+        streamId: input.streamId,
+        pageId: null,
+      });
+      setTasks((prev) => [task, ...prev]);
+    } catch (err) {
+      console.error("Failed to create task:", err);
+    }
   }
 
   return (
@@ -375,6 +258,13 @@ export function TasksPage() {
       </div>
 
       {/* Task groups */}
+      {activeTasks.length === 0 && (
+        <div className="text-center py-16">
+          <span className="material-symbols-outlined text-[48px] text-on-surface-variant/20">check_circle</span>
+          <p className="text-on-surface-variant/50 text-sm mt-3">No active tasks</p>
+        </div>
+      )}
+
       <div className="space-y-6">
         {groups.map((group) => (
           <section key={group.key} className="space-y-2">
@@ -397,32 +287,20 @@ export function TasksPage() {
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <button
-                      onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
-                      className={cn(
-                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0",
-                        "border-outline-variant hover:border-tertiary"
-                      )}
-                    >
-                      {task.status === "done" && (
-                        <span className="material-symbols-outlined text-[14px] text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setDetailTask(task)}
-                      className="text-sm font-medium text-on-surface truncate text-left hover:underline"
-                    >
-                      {task.title}
-                    </button>
+                      onClick={(e) => { e.stopPropagation(); handleToggle(task.id); }}
+                      className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 border-outline-variant hover:border-tertiary"
+                    />
+                    <span className="text-sm font-medium text-on-surface truncate">{task.title}</span>
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-[10px] font-medium text-on-surface-variant/50">{task.streamName}</span>
+                    <span className="text-[10px] font-medium text-on-surface-variant/50">{getStreamName(task.stream_id)}</span>
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: priorityColors[task.priority] }} title={task.priority} />
                     <span className="text-[10px] font-bold text-on-surface-variant whitespace-nowrap w-16 text-right">
-                      {task.dueDate ?? "No date"}
+                      {task.due_date ? fmtDate(task.due_date) : "No date"}
                     </span>
-                    {task.streamId && (
+                    {task.stream_id && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); router.push(`/s/${task.streamId}`); }}
+                        onClick={(e) => { e.stopPropagation(); router.push(`/s/${task.stream_id}`); }}
                         className="opacity-0 group-hover:opacity-100 text-tertiary text-[10px] font-medium flex items-center gap-0.5 transition-opacity"
                       >
                         <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
@@ -436,7 +314,7 @@ export function TasksPage() {
         ))}
       </div>
 
-      {/* Done section — collapsed */}
+      {/* Done section */}
       {doneTasks.length > 0 && (
         <section className="space-y-2">
           <button
@@ -459,7 +337,7 @@ export function TasksPage() {
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <button
-                      onClick={() => toggleTask(task.id)}
+                      onClick={() => handleToggle(task.id)}
                       className="w-5 h-5 rounded-full border-2 border-tertiary text-tertiary flex items-center justify-center shrink-0"
                     >
                       <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
@@ -467,8 +345,8 @@ export function TasksPage() {
                     <span className="text-sm font-medium text-on-surface/40 line-through truncate">{task.title}</span>
                   </div>
                   <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-[10px] text-on-surface-variant/30">{task.streamName}</span>
-                    <span className="text-[10px] text-on-surface-variant/30 w-16 text-right">{task.dueDate ?? "No date"}</span>
+                    <span className="text-[10px] text-on-surface-variant/30">{getStreamName(task.stream_id)}</span>
+                    <span className="text-[10px] text-on-surface-variant/30 w-16 text-right">{task.due_date ? fmtDate(task.due_date) : "No date"}</span>
                   </div>
                 </div>
               ))}
@@ -477,18 +355,11 @@ export function TasksPage() {
         </section>
       )}
 
-      {/* Modals */}
+      {/* Modal */}
       <NewTaskModal
         open={newTaskOpen}
         onClose={() => setNewTaskOpen(false)}
-        onCreate={(task) => setTasks((prev) => [...prev, task])}
-      />
-      <TaskDetailModal
-        task={detailTask}
-        open={detailTask !== null}
-        onClose={() => setDetailTask(null)}
-        onUpdate={updateTask}
-        onNavigate={(path) => router.push(path)}
+        onCreate={handleCreate}
       />
     </div>
   );

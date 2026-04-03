@@ -3,8 +3,18 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { findStreamById } from "@/lib/known-streams";
+import { findStreamById, registerSubPage } from "@/lib/known-streams";
+import { useBreadcrumbContext } from "@/lib/breadcrumb-context";
 import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
+import { CreateStreamModal, type CreateStreamResult } from "@/components/layout/create-stream-modal";
+import {
+  fetchPages,
+  createPage as dbCreatePage,
+  fetchStreamNotes,
+  fetchPageNotes,
+  type DbPage,
+  type DbNote,
+} from "@/lib/supabase/db";
 
 const StreamEditor = dynamic(
   () => import("@/features/stream-view/stream-editor").then((m) => ({ default: m.StreamEditor })),
@@ -21,16 +31,12 @@ interface Task {
   status: "todo" | "in_progress" | "done";
 }
 
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  timeAgo: string;
-}
 
 interface SubPage {
   id: string;
   name: string;
+  hashtag: string;
+  color: string;
   children: SubPage[];
 }
 
@@ -50,26 +56,19 @@ const initialTasks: Task[] = [
   { id: "t4", title: "Initial Project Setup", dueDate: "Oct 1", priority: "normal", status: "done" },
 ];
 
-const mockNotes: Note[] = [
-  {
-    id: "n1",
-    title: "Tailwind Config Architecture",
-    content: "We should move the extended color palette to a separate theme.js file to keep the main config clean.",
-    timeAgo: "Just now",
-  },
-  {
-    id: "n2",
-    title: "React 19 Server Components Research",
-    content: "Testing the new 'use cache' directive. The performance gains for the dashboard rendering are significant.",
-    timeAgo: "2 hours ago",
-  },
-  {
-    id: "n3",
-    title: "Accessibility Audit Notes",
-    content: "Need to ensure all Material Symbols have proper aria-label tags.",
-    timeAgo: "Yesterday",
-  },
-];
+
+function timeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return `${days}d ago`;
+}
 
 const statusGroups = [
   { key: "in_progress" as const, label: "In Progress" },
@@ -119,6 +118,20 @@ function CoverPicker({ open, onClose, streamColor, onSelect }: {
   );
 }
 
+/* ── Tree builder — flat DB pages → nested SubPage tree ── */
+
+function buildTree(flat: DbPage[], parentId: string | null): SubPage[] {
+  return flat
+    .filter((p) => p.parent_page_id === parentId)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      hashtag: p.hashtag,
+      color: p.colour,
+      children: buildTree(flat, p.id),
+    }));
+}
+
 /* ── Component ── */
 
 interface StreamViewProps {
@@ -134,7 +147,8 @@ export function StreamView({ streamId }: StreamViewProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [showNewTask, setShowNewTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const { setSegments, setNavigator } = useBreadcrumbContext();
+  const [editingNote, setEditingNote] = useState<DbNote | null>(null);
   const [showAiTooltip, setShowAiTooltip] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [coverHovered, setCoverHovered] = useState(false);
@@ -146,13 +160,68 @@ export function StreamView({ streamId }: StreamViewProps) {
   // Sub-page tree navigation
   const [subPages, setSubPages] = useState<SubPage[]>([]);
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
-  const [addingPage, setAddingPage] = useState(false);
-  const [newPageName, setNewPageName] = useState("");
-  const pageInputRef = useRef<HTMLInputElement>(null);
+  const [createSubPageOpen, setCreateSubPageOpen] = useState(false);
+  const [currentNotes, setCurrentNotes] = useState<DbNote[]>([]);
 
+  // Current node: stream root or active sub-page
+  const currentNodeId = breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].id : streamId;
+
+  // Fetch pages from Supabase and build tree
   useEffect(() => {
-    if (addingPage) pageInputRef.current?.focus();
-  }, [addingPage]);
+    async function load() {
+      const flat = await fetchPages(streamId);
+      const tree = buildTree(flat, null);
+      setSubPages(tree);
+      // Register all sub-page hashtags for in-memory routing
+      for (const p of flat) {
+        registerSubPage({
+          id: p.id,
+          name: p.name,
+          hashtag: p.hashtag,
+          color: p.colour,
+          parentStreamId: streamId,
+        });
+      }
+    }
+    load();
+  }, [streamId]);
+
+  // Fetch notes for the current node from Supabase
+  useEffect(() => {
+    async function load() {
+      const isSubPage = breadcrumb.length > 0;
+      const notes = isSubPage
+        ? await fetchPageNotes(currentNodeId)
+        : await fetchStreamNotes(currentNodeId);
+      setCurrentNotes(notes);
+    }
+    load();
+  }, [currentNodeId, breadcrumb.length]);
+
+  // Determine the current hashtag for the "Add note" pre-fill
+  function getCurrentHashtag(): string {
+    if (breadcrumb.length === 0) return streamHashtag;
+    let current = subPages;
+    for (const crumb of breadcrumb) {
+      const found = current.find((p) => p.id === crumb.id);
+      if (found) {
+        if (crumb.id === breadcrumb[breadcrumb.length - 1].id) return found.hashtag;
+        current = found.children;
+      }
+    }
+    return streamHashtag;
+  }
+
+  // Sync sub-page breadcrumb to topbar context
+  useEffect(() => {
+    setSegments(breadcrumb);
+    return () => setSegments([]);
+  }, [breadcrumb, setSegments]);
+
+  // Register breadcrumb navigation callback for the topbar
+  useEffect(() => {
+    setNavigator((index: number) => navigateToBreadcrumb(index));
+  }, [setNavigator]);
 
   const handleAiClick = useCallback(() => {
     setShowAiTooltip(true);
@@ -190,32 +259,56 @@ export function StreamView({ streamId }: StreamViewProps) {
     return current;
   }
 
-  function addSubPage() {
-    if (!newPageName.trim()) return;
-    const newPage: SubPage = {
-      id: crypto.randomUUID().slice(0, 8),
-      name: newPageName.trim(),
-      children: [],
-    };
+  async function handleCreateSubPage(result: CreateStreamResult) {
+    try {
+      const parentPageId = breadcrumb.length > 0
+        ? breadcrumb[breadcrumb.length - 1].id
+        : null;
 
-    if (breadcrumb.length === 0) {
-      setSubPages((prev) => [...prev, newPage]);
-    } else {
-      setSubPages((prev) => {
-        const updated = JSON.parse(JSON.stringify(prev)) as SubPage[];
-        let current = updated;
-        for (const crumb of breadcrumb) {
-          const found = current.find((p) => p.id === crumb.id);
-          if (found) current = found.children;
-        }
-        current.push(newPage);
-        return updated;
+      const dbPage = await dbCreatePage({
+        streamId,
+        parentPageId,
+        name: result.name,
+        hashtag: result.hashtag,
+        colour: result.color,
       });
+
+      const newPage: SubPage = {
+        id: dbPage.id,
+        name: dbPage.name,
+        hashtag: dbPage.hashtag,
+        color: dbPage.colour,
+        children: [],
+      };
+
+      registerSubPage({
+        id: dbPage.id,
+        name: dbPage.name,
+        hashtag: dbPage.hashtag,
+        color: dbPage.colour,
+        parentStreamId: streamId,
+      });
+
+      if (breadcrumb.length === 0) {
+        setSubPages((prev) => [...prev, newPage]);
+      } else {
+        setSubPages((prev) => {
+          const updated = JSON.parse(JSON.stringify(prev)) as SubPage[];
+          let current = updated;
+          for (const crumb of breadcrumb) {
+            const found = current.find((p) => p.id === crumb.id);
+            if (found) current = found.children;
+          }
+          current.push(newPage);
+          return updated;
+        });
+      }
+
+      setBreadcrumb((prev) => [...prev, { id: newPage.id, name: newPage.name }]);
+      setCreateSubPageOpen(false);
+    } catch (err) {
+      console.error("Failed to create sub-page:", err);
     }
-    // Navigate into the new sub-page immediately
-    setBreadcrumb((prev) => [...prev, { id: newPage.id, name: newPage.name }]);
-    setNewPageName("");
-    setAddingPage(false);
   }
 
   function navigateToSubPage(page: SubPage) {
@@ -257,142 +350,93 @@ export function StreamView({ streamId }: StreamViewProps) {
         )}
       </div>
 
-      {/* ── Stream header ── */}
-      <div className="flex items-start justify-between px-10 pt-5 pb-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-on-surface mb-0.5">
-            {streamName}
-          </h1>
-          {streamHashtag && (
-            <span className="text-on-surface-variant text-sm font-medium">
-              #{streamHashtag}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Presence avatars */}
-          <div className="flex -space-x-2 mr-2">
-            {["A", "B", "C"].map((letter) => (
-              <div
-                key={letter}
-                className="w-7 h-7 rounded-full border-2 border-surface bg-surface-container-highest flex items-center justify-center text-[9px] font-bold text-on-surface-variant"
-              >
-                {letter}
-              </div>
-            ))}
-          </div>
-
-          <div className="relative">
-            <button
-              onClick={handleAiClick}
-              className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-surface-variant"
-            >
-              <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-              Summarise with AI
-            </button>
-            {showAiTooltip && (
-              <div className="absolute right-0 top-full mt-1 whitespace-nowrap bg-inverse-surface text-inverse-on-surface text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg animate-in fade-in duration-150 z-10">
-                AI features coming soon
-              </div>
+      {/* ── Stream header — overlaps banner ── */}
+      <div className="relative -mt-16 mx-10 bg-surface rounded-xl shadow-sm px-6 pt-5 pb-4 z-10">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-on-surface mb-0.5">
+              {streamName}
+            </h1>
+            {streamHashtag && (
+              <span className="text-on-surface-variant text-sm font-medium">
+                #{streamHashtag}
+              </span>
             )}
           </div>
 
-          <button
-            onClick={() => setShowNewTask(true)}
-            className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-surface-variant"
-          >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            Add task
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Presence avatars */}
+            <div className="flex -space-x-2 mr-2">
+              {["A", "B", "C"].map((letter) => (
+                <div
+                  key={letter}
+                  className="w-7 h-7 rounded-full border-2 border-surface bg-surface-container-highest flex items-center justify-center text-[9px] font-bold text-on-surface-variant"
+                >
+                  {letter}
+                </div>
+              ))}
+            </div>
 
-          <button
-            onClick={() => setEditingNote({ id: "", title: "", content: "", timeAgo: "" })}
-            className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-surface-variant"
-          >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            Add note
-          </button>
-        </div>
-      </div>
-
-      {/* ── Breadcrumb ── */}
-      <div className="px-10 pb-3">
-        <nav className="flex items-center gap-1 text-sm">
-          <button
-            onClick={() => navigateToBreadcrumb(-1)}
-            className={cn(
-              "font-medium transition-colors",
-              breadcrumb.length === 0
-                ? "text-on-surface"
-                : "text-on-surface-variant hover:text-on-surface"
-            )}
-          >
-            {streamName}
-          </button>
-          {breadcrumb.map((crumb, i) => (
-            <span key={crumb.id} className="flex items-center gap-1">
-              <span className="text-on-surface-variant/40 material-symbols-outlined text-[14px]">chevron_right</span>
+            <div className="relative">
               <button
-                onClick={() => navigateToBreadcrumb(i)}
-                className={cn(
-                  "font-medium transition-colors",
-                  i === breadcrumb.length - 1
-                    ? "text-on-surface"
-                    : "text-on-surface-variant hover:text-on-surface"
-                )}
+                onClick={handleAiClick}
+                className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-surface-variant"
               >
-                {crumb.name}
+                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                Summarise with AI
               </button>
-            </span>
-          ))}
-        </nav>
+              {showAiTooltip && (
+                <div className="absolute right-0 top-full mt-1 whitespace-nowrap bg-inverse-surface text-inverse-on-surface text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg animate-in fade-in duration-150 z-10">
+                  AI features coming soon
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowNewTask(true)}
+              className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-surface-variant"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add task
+            </button>
+
+            <button
+              onClick={() => setEditingNote({ id: "", content: `#${getCurrentHashtag()} `, hashtags: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() })}
+              className="text-on-surface-variant text-xs font-semibold hover:text-on-surface transition-colors flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-surface-variant"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add note
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── Sub-page cards ── */}
-      <div className="px-10 pb-4">
+      <div className="px-10 pt-4 pb-4">
           <div className="flex items-stretch gap-3 overflow-x-auto pb-1">
             {currentSubPages.map((page) => (
               <button
                 key={page.id}
                 onClick={() => navigateToSubPage(page)}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl border transition-colors hover:bg-surface-variant/50 shrink-0 min-w-[140px]"
-                style={{ borderColor: `${streamColor}30` }}
+                className="flex items-center gap-2.5 px-4 py-3 rounded-xl border transition-colors hover:bg-surface-variant/50 shrink-0 min-w-[140px]"
+                style={{ borderColor: `${page.color}30` }}
               >
-                <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
-                  description
-                </span>
-                <span className="text-sm font-medium text-on-surface">{page.name}</span>
+                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: page.color }} />
+                <div className="text-left min-w-0">
+                  <span className="text-sm font-medium text-on-surface block truncate">{page.name}</span>
+                  <span className="text-[10px] text-on-surface-variant/50">#{page.hashtag}</span>
+                </div>
               </button>
             ))}
 
-            {/* New sub-page card */}
-            {addingPage ? (
-              <form
-                onSubmit={(e) => { e.preventDefault(); addSubPage(); }}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-outline-variant/40 shrink-0 min-w-[140px]"
-              >
-                <span className="material-symbols-outlined text-[18px] text-on-surface-variant/40">add</span>
-                <input
-                  ref={pageInputRef}
-                  type="text"
-                  value={newPageName}
-                  onChange={(e) => setNewPageName(e.target.value)}
-                  placeholder="Page name..."
-                  className="bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/40 w-28"
-                  onBlur={() => { if (newPageName.trim()) addSubPage(); else setAddingPage(false); }}
-                  onKeyDown={(e) => { if (e.key === "Escape") { setAddingPage(false); setNewPageName(""); } }}
-                />
-              </form>
-            ) : (
-              <button
-                onClick={() => setAddingPage(true)}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-outline-variant/30 text-on-surface-variant/50 hover:text-on-surface-variant hover:border-outline-variant/50 transition-colors shrink-0 min-w-[140px]"
-              >
-                <span className="material-symbols-outlined text-[18px]">add</span>
-                <span className="text-sm font-medium">New sub-page</span>
-              </button>
-            )}
+            {/* New sub-page — opens create modal */}
+            <button
+              onClick={() => setCreateSubPageOpen(true)}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-outline-variant/30 text-on-surface-variant/50 hover:text-on-surface-variant hover:border-outline-variant/50 transition-colors shrink-0 min-w-[140px]"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              <span className="text-sm font-medium">New sub-page</span>
+            </button>
           </div>
         </div>
 
@@ -525,23 +569,33 @@ export function StreamView({ streamId }: StreamViewProps) {
                 </h3>
 
                 <div className="space-y-2">
-                  {mockNotes.map((note) => (
-                    <button
-                      key={note.id}
-                      onClick={() => setEditingNote(note)}
-                      className="w-full text-left p-3 rounded-lg bg-surface-container-lowest hover:bg-surface-variant/50 transition-colors space-y-1"
-                    >
-                      <span className="text-[9px] font-semibold text-on-surface-variant/50">
-                        {note.timeAgo}
-                      </span>
-                      <h4 className="text-xs font-bold text-on-surface truncate">
-                        {note.title}
-                      </h4>
-                      <p className="text-[11px] text-on-surface-variant leading-relaxed line-clamp-2">
-                        {note.content}
-                      </p>
-                    </button>
-                  ))}
+                  {currentNotes.length === 0 ? (
+                    <p className="text-[11px] text-on-surface-variant/40 text-center py-3">No notes yet</p>
+                  ) : (
+                    currentNotes.map((note) => {
+                      const firstLine = note.content.split("\n")[0].replace(/#\w+/g, "").trim() || "Untitled";
+                      const rest = note.content.split("\n").slice(1).join("\n").trim();
+                      return (
+                        <button
+                          key={note.id}
+                          onClick={() => setEditingNote(note)}
+                          className="w-full text-left p-3 rounded-lg bg-surface-container-lowest hover:bg-surface-variant/50 transition-colors space-y-1"
+                        >
+                          <span className="text-[9px] font-semibold text-on-surface-variant/50">
+                            {timeAgo(new Date(note.created_at))}
+                          </span>
+                          <h4 className="text-xs font-bold text-on-surface truncate">
+                            {firstLine}
+                          </h4>
+                          {rest && (
+                            <p className="text-[11px] text-on-surface-variant leading-relaxed line-clamp-2">
+                              {rest}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </section>
             </div>
@@ -569,9 +623,15 @@ export function StreamView({ streamId }: StreamViewProps) {
 
       <ExpandedCaptureModal
         open={editingNote !== null}
-        onClose={() => setEditingNote(null)}
-        initialTitle={editingNote?.title ?? ""}
+        onClose={() => { setEditingNote(null); /* Refresh notes after edit */ const nodeId = currentNodeId; (breadcrumb.length > 0 ? fetchPageNotes(nodeId) : fetchStreamNotes(nodeId)).then(setCurrentNotes); }}
         initialContent={editingNote?.content ?? ""}
+      />
+
+      <CreateStreamModal
+        open={createSubPageOpen}
+        onClose={() => setCreateSubPageOpen(false)}
+        onCreate={handleCreateSubPage}
+        mode="subpage"
       />
     </div>
   );

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useQuickCapture } from "@/components/quick-capture-provider";
 import { findStreamById } from "@/lib/known-streams";
+import { useBreadcrumbContext } from "@/lib/breadcrumb-context";
 import { SearchModal } from "@/components/layout/search-modal";
 
 const routeLabels: Record<string, string> = {
@@ -14,9 +15,8 @@ const routeLabels: Record<string, string> = {
   "/workspaces": "Workspaces",
 };
 
-function getBreadcrumb(pathname: string): string {
+function getPageLabel(pathname: string): string {
   if (routeLabels[pathname]) return routeLabels[pathname];
-  // /s/[id] → stream name
   const streamMatch = pathname.match(/^\/s\/(.+)$/);
   if (streamMatch) {
     const stream = findStreamById(streamMatch[1]);
@@ -29,7 +29,8 @@ export function Header() {
   const { open } = useQuickCapture();
   const [searchOpen, setSearchOpen] = useState(false);
   const pathname = usePathname();
-  const breadcrumb = getBreadcrumb(pathname);
+  const pageLabel = getPageLabel(pathname);
+  const { segments, navigateTo } = useBreadcrumbContext();
 
   // Global Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -46,9 +47,35 @@ export function Header() {
   return (
     <>
       <header className="w-full h-16 sticky top-0 z-40 bg-surface flex items-center justify-between px-8 gap-4">
-        <span className="text-on-surface-variant text-sm font-medium shrink-0">
-          Workspace / <span className="text-on-surface">{breadcrumb}</span>
-        </span>
+        <nav className="text-on-surface-variant text-sm font-medium shrink-0 flex items-center gap-1 min-w-0">
+          <span>Workspace</span>
+          <span className="text-on-surface-variant/40">/</span>
+          {segments.length > 0 ? (
+            <button
+              onClick={() => navigateTo(-1)}
+              className="text-on-surface-variant hover:text-on-surface transition-colors truncate"
+            >
+              {pageLabel}
+            </button>
+          ) : (
+            <span className="text-on-surface truncate">{pageLabel}</span>
+          )}
+          {segments.map((seg, i) => (
+            <span key={seg.id} className="flex items-center gap-1 min-w-0">
+              <span className="text-on-surface-variant/40">/</span>
+              {i < segments.length - 1 ? (
+                <button
+                  onClick={() => navigateTo(i)}
+                  className="text-on-surface-variant hover:text-on-surface transition-colors truncate"
+                >
+                  {seg.name}
+                </button>
+              ) : (
+                <span className="text-on-surface truncate">{seg.name}</span>
+              )}
+            </span>
+          ))}
+        </nav>
 
         {/* Search bar */}
         <button

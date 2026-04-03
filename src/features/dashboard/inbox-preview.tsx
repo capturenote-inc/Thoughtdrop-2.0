@@ -1,47 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
 import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
+import { fetchInboxNotes, type DbNote } from "@/lib/supabase/db";
 
-interface InboxNote {
-  id: string;
-  title: string;
-  preview: string;
-  timeAgo: string;
-  accentColor: string | null;
+function timeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return `${days}d ago`;
 }
 
-const mockNotes: InboxNote[] = [
-  {
-    id: "1",
-    title: "React 19 Server Components...",
-    preview:
-      "I need to investigate how the new useActionState hook simplifies form handling compared to...",
-    timeAgo: "2h ago",
-    accentColor: "#0D9488",
-  },
-  {
-    id: "2",
-    title: "Habit Stacking Ideas",
-    preview:
-      "Morning coffee followed immediately by 10 minutes of journaling. It's the only way to make it stick.",
-    timeAgo: "5h ago",
-    accentColor: "#D97706",
-  },
-  {
-    id: "3",
-    title: "Grocery List",
-    preview:
-      "Oat milk, sourdough bread, avocados, sea salt, dark roast beans, sparkling water...",
-    timeAgo: "Yesterday",
-    accentColor: null,
-  },
-];
-
 export function InboxPreview() {
-  const [editingNote, setEditingNote] = useState<InboxNote | null>(null);
+  const [notes, setNotes] = useState<DbNote[]>([]);
+  const [editingNote, setEditingNote] = useState<DbNote | null>(null);
+
+  useEffect(() => {
+    fetchInboxNotes().then((all) => setNotes(all.slice(0, 3)));
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -52,39 +35,38 @@ export function InboxPreview() {
         </Link>
       </div>
 
-      <div className="space-y-4">
-        {mockNotes.map((note) => (
-          <div
-            key={note.id}
-            onClick={() => setEditingNote(note)}
-            className={cn(
-              "bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer border-l-4",
-              note.accentColor ? "" : "border-transparent"
-            )}
-            style={
-              note.accentColor
-                ? { borderLeftColor: note.accentColor }
-                : undefined
-            }
-          >
-            <div className="flex justify-between items-start mb-2">
-              <h4 className="font-bold text-on-surface">{note.title}</h4>
-              <span className="text-[10px] text-on-surface-variant font-medium">
-                {note.timeAgo}
-              </span>
-            </div>
-            <p className="text-on-surface-variant text-sm line-clamp-2">
-              {note.preview}
-            </p>
-          </div>
-        ))}
-      </div>
+      {notes.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-on-surface-variant/50 text-sm">No unrouted notes</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {notes.map((note) => {
+            const firstLine = note.content.split("\n")[0].replace(/#\w+/g, "").trim() || "Untitled";
+            const rest = note.content.split("\n").slice(1).join("\n").trim() || note.content;
+            return (
+              <div
+                key={note.id}
+                onClick={() => setEditingNote(note)}
+                className="bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer border-l-4 border-transparent"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="font-bold text-on-surface">{firstLine}</h4>
+                  <span className="text-[10px] text-on-surface-variant font-medium">
+                    {timeAgo(new Date(note.created_at))}
+                  </span>
+                </div>
+                <p className="text-on-surface-variant text-sm line-clamp-2">{rest}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <ExpandedCaptureModal
         open={editingNote !== null}
-        onClose={() => setEditingNote(null)}
-        initialTitle={editingNote?.title ?? ""}
-        initialContent={editingNote?.preview ?? ""}
+        onClose={() => { setEditingNote(null); fetchInboxNotes().then((all) => setNotes(all.slice(0, 3))); }}
+        initialContent={editingNote?.content ?? ""}
       />
     </div>
   );
