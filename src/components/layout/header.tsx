@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useQuickCapture } from "@/components/quick-capture-provider";
 import { findStreamById } from "@/lib/known-streams";
+import { SearchModal } from "@/components/layout/search-modal";
 
 const routeLabels: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/inbox": "Inbox",
   "/tasks": "Tasks",
   "/workspaces": "Workspaces",
-  "/settings": "Settings",
 };
 
 function getBreadcrumb(pathname: string): string {
@@ -31,6 +31,18 @@ export function Header() {
   const pathname = usePathname();
   const breadcrumb = getBreadcrumb(pathname);
 
+  // Global Cmd+K / Ctrl+K shortcut
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
     <>
       <header className="w-full h-16 sticky top-0 z-40 bg-surface flex items-center justify-between px-8 gap-4">
@@ -44,7 +56,8 @@ export function Header() {
           className="flex-1 max-w-xl flex items-center gap-2 bg-surface-container hover:bg-surface-container-high rounded-xl px-4 py-2 transition-colors cursor-text"
         >
           <span className="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
-          <span className="text-on-surface-variant/50 text-sm">Search notes, tasks, streams...</span>
+          <span className="text-on-surface-variant/50 text-sm flex-1 text-left">Search notes, tasks, streams...</span>
+          <kbd className="text-[10px] text-on-surface-variant/40 font-mono bg-surface-container-high px-1.5 py-0.5 rounded">⌘K</kbd>
         </button>
 
         <div className="flex items-center gap-6 shrink-0">
@@ -71,30 +84,7 @@ export function Header() {
         </div>
       </header>
 
-      {/* Search modal stub */}
-      {searchOpen && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSearchOpen(false)} />
-          <div className="relative bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-4">
-              <span className="material-symbols-outlined text-on-surface-variant text-[22px]">search</span>
-              <input
-                type="text"
-                placeholder="Search notes, tasks, streams..."
-                autoFocus
-                className="flex-1 bg-transparent text-on-surface placeholder:text-on-surface-variant/40 outline-none text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setSearchOpen(false);
-                }}
-              />
-              <kbd className="text-[10px] text-on-surface-variant/50 font-mono bg-surface-container px-1.5 py-0.5 rounded">ESC</kbd>
-            </div>
-            <div className="px-5 pb-5 pt-2 border-t border-outline-variant/20">
-              <p className="text-on-surface-variant/40 text-xs text-center py-6">Start typing to search...</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { KNOWN_STREAMS } from "@/lib/known-streams";
-import { ExpandedCaptureModal } from "@/features/editor/expanded-capture-modal";
 
 /* ── Types ── */
 
@@ -226,14 +226,23 @@ function NewTaskModal({ open, onClose, onCreate }: {
 
 /* ── Task detail modal ── */
 
-function TaskDetailModal({ task, open, onClose, onUpdate }: {
+function TaskDetailModal({ task, open, onClose, onUpdate, onNavigate }: {
   task: GlobalTask | null;
   open: boolean;
   onClose: () => void;
   onUpdate: (task: GlobalTask) => void;
+  onNavigate: (path: string) => void;
 }) {
   const [title, setTitle] = useState(task?.title ?? "");
   const [priority, setPriority] = useState<GlobalTask["priority"]>(task?.priority ?? "normal");
+
+  // Sync local state when a different task is opened
+  useEffect(() => {
+    if (task) {
+      setTitle(task.title);
+      setPriority(task.priority);
+    }
+  }, [task]);
 
   if (!open || !task) return null;
 
@@ -270,13 +279,13 @@ function TaskDetailModal({ task, open, onClose, onUpdate }: {
             <span className="material-symbols-outlined text-[16px]">folder</span>
             {task.streamName}
             {task.streamId && (
-              <a
-                href={`/s/${task.streamId}`}
+              <button
+                onClick={() => { onClose(); onNavigate(`/s/${task.streamId}`); }}
                 className="text-tertiary text-xs font-medium hover:underline ml-auto flex items-center gap-1"
               >
                 Go to location
                 <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-              </a>
+              </button>
             )}
           </div>
 
@@ -323,6 +332,7 @@ function TaskDetailModal({ task, open, onClose, onUpdate }: {
 /* ── Main component ── */
 
 export function TasksPage() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<GlobalTask[]>(initialTasks);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [detailTask, setDetailTask] = useState<GlobalTask | null>(null);
@@ -357,7 +367,7 @@ export function TasksPage() {
         </div>
         <button
           onClick={() => setNewTaskOpen(true)}
-          className="bg-inverse-surface text-inverse-on-surface text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1.5"
+          className="text-on-surface-variant text-sm font-semibold hover:text-on-surface transition-colors flex items-center gap-1.5 px-4 py-2 rounded-lg hover:bg-surface-variant"
         >
           <span className="material-symbols-outlined text-[16px]">add</span>
           New task
@@ -387,7 +397,7 @@ export function TasksPage() {
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <button
-                      onClick={() => toggleTask(task.id)}
+                      onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
                       className={cn(
                         "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0",
                         "border-outline-variant hover:border-tertiary"
@@ -411,12 +421,12 @@ export function TasksPage() {
                       {task.dueDate ?? "No date"}
                     </span>
                     {task.streamId && (
-                      <a
-                        href={`/s/${task.streamId}`}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); router.push(`/s/${task.streamId}`); }}
                         className="opacity-0 group-hover:opacity-100 text-tertiary text-[10px] font-medium flex items-center gap-0.5 transition-opacity"
                       >
                         <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
-                      </a>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -478,6 +488,7 @@ export function TasksPage() {
         open={detailTask !== null}
         onClose={() => setDetailTask(null)}
         onUpdate={updateTask}
+        onNavigate={(path) => router.push(path)}
       />
     </div>
   );

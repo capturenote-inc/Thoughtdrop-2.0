@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { KNOWN_STREAMS, STREAM_PRESET_COLORS, registerStream, removeStream, type KnownStream } from "@/lib/known-streams";
 import { CreateStreamModal } from "@/components/layout/create-stream-modal";
+import { SettingsModal } from "@/components/layout/settings-modal";
 
 const navItems = [
   { icon: "dashboard", label: "Dashboard", href: "/dashboard" },
@@ -17,16 +17,13 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { setTheme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [streams, setStreams] = useState<KnownStream[]>(KNOWN_STREAMS);
   const [createOpen, setCreateOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; stream: KnownStream } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<KnownStream | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const contextRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => setMounted(true), []);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -212,8 +209,8 @@ export function Sidebar() {
           )}
         >
           {/* Settings */}
-          <Link
-            href="/settings"
+          <button
+            onClick={() => setSettingsOpen(true)}
             className={cn(
               "flex items-center rounded-xl transition-colors text-on-surface-variant hover:bg-surface-variant",
               expanded ? "px-4 py-3 gap-3" : "w-12 h-12 justify-center"
@@ -224,44 +221,7 @@ export function Sidebar() {
             {expanded && (
               <span className="text-sm font-medium whitespace-nowrap">Settings</span>
             )}
-          </Link>
-
-          {/* Dark mode toggle */}
-          <button
-            onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-            className={cn(
-              "flex items-center rounded-xl transition-colors text-on-surface-variant hover:bg-surface-variant",
-              expanded ? "px-4 py-3 gap-3" : "w-12 h-12 justify-center"
-            )}
-            title="Toggle theme"
-          >
-            <span className="material-symbols-outlined">
-              {mounted ? (resolvedTheme === "dark" ? "light_mode" : "dark_mode") : "dark_mode"}
-            </span>
-            {expanded && (
-              <span className="text-sm font-medium whitespace-nowrap">
-                {mounted ? (resolvedTheme === "dark" ? "Light mode" : "Dark mode") : "Theme"}
-              </span>
-            )}
           </button>
-
-          {/* User avatar */}
-          <div
-            className={cn(
-              "flex items-center gap-3 mt-2",
-              expanded ? "px-4 py-2" : "justify-center"
-            )}
-          >
-            <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center text-xs font-bold text-on-surface-variant shrink-0">
-              B
-            </div>
-            {expanded && (
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-on-surface truncate">Bryan</p>
-                <p className="text-[10px] text-on-surface-variant truncate">Personal workspace</p>
-              </div>
-            )}
-          </div>
         </div>
       </aside>
 
@@ -269,6 +229,11 @@ export function Sidebar() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreate={handleCreateStream}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
 
       {/* Context menu */}
